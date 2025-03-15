@@ -349,7 +349,7 @@ class Actions:
         return (dx * speed, dy * speed)
     directionToVector = staticmethod(directionToVector)
 
-    def getPossibleActions(config, walls):
+    def getPossibleActions(config, walls, tunnels):
         possible = []
         x, y = config.pos
         x_int, y_int = int(x + 0.5), int(y + 0.5)
@@ -360,14 +360,38 @@ class Actions:
 
         for dir, vec in Actions._directionsAsList:
             dx, dy = vec
-            next_y = y_int + dy
             next_x = x_int + dx
-            if not walls[next_x][next_y]:
+            next_y = y_int + dy
+
+            if (next_x, next_y) in tunnels:
+                possible.append(dir)
+            elif not walls[next_x][next_y]:
                 possible.append(dir)
 
         return possible
 
+    @staticmethod
+    def determineTunnelExit(x, y, walls):
+        width = len(walls)
+        if x == 0:
+            return (width - 2, y)  # Left tunnel entrance leads to right exit
+        elif x == width - 1:
+            return (1, y)  # Right tunnel entrance leads to left exit
+        else:
+            return (x, y)
+
+
+    def getTunnelExit(position, tunnels):
+        """
+        Given a tunnel entrance position, return the corresponding exit position.
+        """
+        for tunnel in tunnels:
+            if tunnel != position:
+                return tunnel
+        return None
+
     getPossibleActions = staticmethod(getPossibleActions)
+
 
     def getLegalNeighbors(position, walls):
         x, y = position

@@ -261,7 +261,7 @@ class GameState:
         Creates an initial game state from a layout array (see layout.py).
         """
         self.data.initialize(layout, numGhostAgents)
-
+        
 ############################################################################
 #                     THE HIDDEN SECRETS OF PACMAN                         #
 #                                                                          #
@@ -348,7 +348,7 @@ class PacmanRules:
         """
         Returns a list of possible actions.
         """
-        return Actions.getPossibleActions(state.getPacmanState().configuration, state.data.layout.walls)
+        return Actions.getPossibleActions(state.getPacmanState().configuration, state.data.layout.walls, state.data.layout.tunnels)
     getLegalActions = staticmethod(getLegalActions)
 
     def applyAction(state, action):
@@ -363,16 +363,25 @@ class PacmanRules:
 
         # Update Configuration
         vector = Actions.directionToVector(action, PacmanRules.PACMAN_SPEED)
-        pacmanState.configuration = pacmanState.configuration.generateSuccessor(
-            vector)
+        pacmanState.configuration = pacmanState.configuration.generateSuccessor(vector)
 
-        # Eat
-        next = pacmanState.configuration.getPosition()
-        nearest = nearestPoint(next)
-        if manhattanDistance(nearest, next) <= 0.5:
-            # Remove food
+        # Get Pac-Man's new position
+        next_pos = pacmanState.configuration.getPosition()
+        x, y = int(next_pos[0]), int(next_pos[1])
+        nearest = nearestPoint(next_pos)
+
+        # Check for tunnel transition
+        if ((x, y) in state.data.layout.tunnels or nearest in state.data.layout.tunnels):
+            if x == 0:
+                pacmanState.configuration.pos = (state.data.layout.width - 2, y)
+            elif x == state.data.layout.width - 1:
+                pacmanState.configuration.pos = (1, y)
+
+        # Consume food if close enough
+        if manhattanDistance(nearest, next_pos) <= 0.5:
             PacmanRules.consume(nearest, state)
-    applyAction = staticmethod(applyAction)
+
+
 
     def consume(position, state):
         x, y = position
@@ -410,7 +419,7 @@ class GhostRules:
         """
         conf = state.getGhostState(ghostIndex).configuration
         possibleActions = Actions.getPossibleActions(
-            conf, state.data.layout.walls)
+            conf, state.data.layout.walls, state.data.layout.tunnels)
         reverse = Actions.reverseDirection(conf.direction)
         if Directions.STOP in possibleActions:
             possibleActions.remove(Directions.STOP)
@@ -420,7 +429,6 @@ class GhostRules:
     getLegalActions = staticmethod(getLegalActions)
 
     def applyAction(state, action, ghostIndex):
-
         legal = GhostRules.getLegalActions(state, ghostIndex)
         if action not in legal:
             raise Exception("Illegal ghost action " + str(action))
@@ -430,9 +438,18 @@ class GhostRules:
         if ghostState.scaredTimer > 0:
             speed /= 2.0
         vector = Actions.directionToVector(action, speed)
-        ghostState.configuration = ghostState.configuration.generateSuccessor(
-            vector)
-    applyAction = staticmethod(applyAction)
+        ghostState.configuration = ghostState.configuration.generateSuccessor(vector)
+
+        # Get Ghost's new position
+        next_pos = ghostState.configuration.getPosition()
+        x, y = int(next_pos[0]), int(next_pos[1])
+
+        # Check for tunnel transition
+        if (x, y) in state.data.layout.tunnels:
+            if x == 0:
+                ghostState.configuration.pos = (state.data.layout.width - 2, y)
+            elif x == state.data.layout.width - 1:
+                ghostState.configuration.pos = (1, y)
 
     def decrementTimer(ghostState):
         timer = ghostState.scaredTimer

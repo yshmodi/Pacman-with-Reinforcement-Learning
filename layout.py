@@ -27,6 +27,7 @@ class Layout:
     """
 
     def __init__(self, layoutText):
+        self.tunnels = []
         self.width = len(layoutText[0])
         self.height = len(layoutText)
         self.walls = Grid(self.width, self.height, False)
@@ -101,15 +102,15 @@ class Layout:
 
     def processLayoutText(self, layoutText):
         """
-        Coordinates are flipped from the input format to the (x,y) convention here
+        Coordinates are flipped from the input format to the (x,y) convention here.
 
-        The shape of the maze.  Each character
-        represents a different type of object.
-         % - Wall
-         . - Food
-         o - Capsule
-         G - Ghost
-         P - Pacman
+        The shape of the maze. Each character represents a different type of object.
+        % - Wall
+        . - Food
+        o - Capsule
+        G - Ghost
+        P - Pacman
+        T - Tunnel
         Other characters are ignored.
         """
         maxY = self.height - 1
@@ -117,6 +118,8 @@ class Layout:
             for x in range(self.width):
                 layoutChar = layoutText[maxY - y][x]
                 self.processLayoutChar(x, y, layoutChar)
+                if layoutChar == 'T':
+                    self.tunnels.append((x, y))
         self.agentPositions.sort()
         self.agentPositions = [(i == 0, pos) for i, pos in self.agentPositions]
 
