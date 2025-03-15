@@ -419,7 +419,7 @@ class GhostRules:
         """
         conf = state.getGhostState(ghostIndex).configuration
         possibleActions = Actions.getPossibleActions(
-            conf, state.data.layout.walls, state.data.layout.tunnels)
+            conf, state.data.layout.walls, [])
         reverse = Actions.reverseDirection(conf.direction)
         if Directions.STOP in possibleActions:
             possibleActions.remove(Directions.STOP)
@@ -446,10 +446,7 @@ class GhostRules:
 
         # Check for tunnel transition
         if (x, y) in state.data.layout.tunnels:
-            if x == 0:
-                ghostState.configuration.pos = (state.data.layout.width - 2, y)
-            elif x == state.data.layout.width - 1:
-                ghostState.configuration.pos = (1, y)
+            return
 
     def decrementTimer(ghostState):
         timer = ghostState.scaredTimer
@@ -698,6 +695,9 @@ def replayGame(layout, actions, display):
         rules.process(state, game)
 
     display.finish()
+
+
+LAYOUTS = ['openClassic', 'mediumGrid']
 
 
 def runGames(layout, horizon, pacman, ghosts, display, numGames, record, numTraining=0, catchExceptions=False, timeout=30):

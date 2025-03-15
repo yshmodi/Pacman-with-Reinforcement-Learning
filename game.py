@@ -362,7 +362,9 @@ class Actions:
             dx, dy = vec
             next_x = x_int + dx
             next_y = y_int + dy
-
+            # Check grid boundaries before accessing walls[next_x][next_y]
+            if next_x < 0 or next_x >= walls.width or next_y < 0 or next_y >= walls.height:
+                continue
             if (next_x, next_y) in tunnels:
                 possible.append(dir)
             elif not walls[next_x][next_y]:

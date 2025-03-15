@@ -138,7 +138,8 @@ class Layout:
         elif layoutChar in ['1', '2', '3', '4']:
             self.agentPositions.append((int(layoutChar), (x, y)))
             self.numGhosts += 1
-
+        elif layoutChar == 'T':  # Assuming 'T' represents a tunnel
+            self.tunnels.append((x, y))
 
 def getLayout(name, back=2):
     if name.endswith('.lay'):

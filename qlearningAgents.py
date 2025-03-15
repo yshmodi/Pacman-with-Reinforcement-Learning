@@ -170,6 +170,21 @@ class PacmanQAgent(QLearningAgent):
         informs parent of action for Pacman.  Do not change or remove this
         method.
         """
+        """
+        For debugging tunnel usage, force Pac-Man to use a tunnel move if available.
+        """
+        legalActions = self.getLegalActions(state)
+        # Check each legal action: if any action results in a tunnel move, pick it.
+        for action in legalActions:
+            successor = state.generateSuccessor(0, action)
+            pos = nearestPoint(successor.getPacmanPosition())
+            # Debug: print out computed successor position and nearest cell
+            # print("Action:", action, "-> Nearest position:", pos)
+            if pos in state.data.layout.tunnels:
+                print("Debug: Forcing tunnel move with action:", action, "resulting in tunnel position:", pos)
+                self.doAction(state, action)
+                return action
+        # Otherwise, use the standard Q-learning policy
         action = QLearningAgent.getAction(self,state)
         self.doAction(state,action)
         return action

@@ -77,6 +77,9 @@ class SimpleExtractor(FeatureExtractor):
         food = state.getFood()
         walls = state.getWalls()
         ghosts = state.getGhostPositions()
+        capsules = state.getCapsules()
+        tunnel = state.data.layout.tunnels
+
 
         features = util.Counter()
 
@@ -94,10 +97,20 @@ class SimpleExtractor(FeatureExtractor):
         if not features["#-of-ghosts-1-step-away"] and food[next_x][next_y]:
             features["eats-food"] = 1.0
 
+        # Check if the next cell is a capsule (power pellet)
+        if (next_x, next_y) in capsules:
+            # Use a higher value to denote high priority
+            features["eats-powerpellet"] = 1.0
+
         dist = closestFood((next_x, next_y), food, walls)
         if dist is not None:
             # make the distance a number less than one otherwise the update
             # will diverge wildly
             features["closest-food"] = float(dist) / (walls.width * walls.height)
+
+        # If the successor position is in a tunnel, add a feature
+        if (next_x, next_y) in state.data.layout.tunnels:
+            features["tunnelEntry"] = 2.0
+
         features.divideAll(10.0)
         return features
