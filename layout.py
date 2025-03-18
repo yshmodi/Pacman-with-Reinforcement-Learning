@@ -13,7 +13,7 @@
 
 
 from util import manhattanDistance
-from game import Grid
+from game import Grid, Directions
 import os
 import random
 from functools import reduce
@@ -27,7 +27,6 @@ class Layout:
     """
 
     def __init__(self, layoutText):
-        self.tunnels = []
         self.width = len(layoutText[0])
         self.height = len(layoutText)
         self.walls = Grid(self.width, self.height, False)
@@ -35,11 +34,16 @@ class Layout:
         self.capsules = []
         self.agentPositions = []
         self.numGhosts = 0
+        self.tunnels = []
+        for y in range(self.height):
+            for x in [0, self.width - 1]:
+                if not self.walls[x][y]:
+                    self.tunnels.append((x, y))
         self.processLayoutText(layoutText)
         self.layoutText = layoutText
         self.totalFood = len(self.food.asList())
         # self.initializeVisibilityMatrix()
-
+                    
     def getNumGhosts(self):
         return self.numGhosts
 
@@ -121,7 +125,17 @@ class Layout:
                 if layoutChar == 'T':
                     self.tunnels.append((x, y))
         self.agentPositions.sort()
-        self.agentPositions = [(i == 0, pos) for i, pos in self.agentPositions]
+        self.agentPositions = [
+            (i == 0, pos, direction) 
+            for i, pos, direction in self.agentPositions
+        ]
+        pacman_count = sum(1 for ap in self.agentPositions if ap[0] == 0)
+        if pacman_count != 1:
+            raise Exception("Layout must have exactly one Pacman (P)")
+        if len(self.agentPositions) - 1 != self.numGhosts:
+            raise Exception("Ghost count mismatch in layout")
+        if len([ap for ap in self.agentPositions if ap[0] == 0]) == 0:
+            raise Exception("Layout must have a Pacman starting position (marked with 'P')")
 
     def processLayoutChar(self, x, y, layoutChar):
         if layoutChar == '%':
@@ -131,14 +145,17 @@ class Layout:
         elif layoutChar == 'o':
             self.capsules.append((x, y))
         elif layoutChar == 'P':
-            self.agentPositions.append((0, (x, y)))
+            # Store Pacman position with default direction
+            self.agentPositions.append((0, (x, y), Directions.WEST))  # Or appropriate direction
         elif layoutChar in ['G']:
-            self.agentPositions.append((1, (x, y)))
+            # Store Ghost position with default direction
+            self.agentPositions.append((1, (x, y), Directions.WEST))  # <-- Add direction
             self.numGhosts += 1
         elif layoutChar in ['1', '2', '3', '4']:
-            self.agentPositions.append((int(layoutChar), (x, y)))
+            # Store numbered Ghost positions with direction
+            self.agentPositions.append((int(layoutChar), (x, y), Directions.WEST))  # <-- Add direction
             self.numGhosts += 1
-        elif layoutChar == 'T':  # Assuming 'T' represents a tunnel
+        elif layoutChar == 'T':
             self.tunnels.append((x, y))
 
 def getLayout(name, back=2):

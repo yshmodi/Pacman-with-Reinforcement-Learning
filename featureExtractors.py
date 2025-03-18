@@ -74,6 +74,9 @@ class SimpleExtractor(FeatureExtractor):
 
     def getFeatures(self, state, action):
         # extract the grid of food and wall locations and get the ghost locations
+        if not isinstance(action, str) or action not in Directions.ALL_DIRECTIONS:
+            action = Directions.STOP  # Default to STOP
+
         food = state.getFood()
         walls = state.getWalls()
         ghosts = state.getGhostPositions()
@@ -84,7 +87,8 @@ class SimpleExtractor(FeatureExtractor):
         features = util.Counter()
 
         features["bias"] = 1.0
-
+        features["x"] = state.getPacmanPosition()[0]  # Unique grid position
+        features["y"] = state.getPacmanPosition()[1]
         # compute the location of pacman after he takes the action
         x, y = state.getPacmanPosition()
         dx, dy = Actions.directionToVector(action)
@@ -108,9 +112,21 @@ class SimpleExtractor(FeatureExtractor):
             # will diverge wildly
             features["closest-food"] = float(dist) / (walls.width * walls.height)
 
-        # If the successor position is in a tunnel, add a feature
-        if (next_x, next_y) in state.data.layout.tunnels:
-            features["tunnelEntry"] = 2.0
+        pac_pos = state.getPacmanPosition()
+        next_pos = (next_x, next_y)
+
+        # Tunnel proximity feature (distance to nearest tunnel)
+        tunnel_dists = [util.manhattanDistance(next_pos, t) for t in state.data.layout.tunnels]
+        features["tunnel-proximity"] = 1.0 / (min(tunnel_dists) + 1)
+        
+        # Tunnel entry feature
+        features["tunnel-entry"] = 1.0 if next_pos in state.data.layout.tunnels else 0.0
+
+        for tunnel in state.data.layout.tunnels:
+            if util.manhattanDistance(pac_pos, tunnel) <= 2:
+                features["tunnel-near"] = 1
+                break
 
         features.divideAll(10.0)
         return features
+    

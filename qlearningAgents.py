@@ -166,29 +166,27 @@ class PacmanQAgent(QLearningAgent):
 
     def getAction(self, state):
         """
-        Simply calls the getAction method of QLearningAgent and then
-        informs parent of action for Pacman.  Do not change or remove this
-        method.
-        """
-        """
-        For debugging tunnel usage, force Pac-Man to use a tunnel move if available.
+        Modified to handle tunnel transitions naturally through Q-learning
+        while maintaining original functionality
         """
         legalActions = self.getLegalActions(state)
-        # Check each legal action: if any action results in a tunnel move, pick it.
-        for action in legalActions:
+        
+        # Preserve original exploration/exploitation logic
+        action = QLearningAgent.getAction(self, state)
+        
+        # Optional: Add debug logging without changing behavior
+        if self.episodesSoFar < 10:  # Only log during early training
             successor = state.generateSuccessor(0, action)
             pos = nearestPoint(successor.getPacmanPosition())
-            # Debug: print out computed successor position and nearest cell
-            # print("Action:", action, "-> Nearest position:", pos)
             if pos in state.data.layout.tunnels:
-                print("Debug: Forcing tunnel move with action:", action, "resulting in tunnel position:", pos)
-                self.doAction(state, action)
-                return action
-        # Otherwise, use the standard Q-learning policy
-        action = QLearningAgent.getAction(self,state)
-        self.doAction(state,action)
+                print("Potential tunnel move:", action)
+                
+        # Ensure valid action type
+        if not isinstance(action, str) or action not in Directions.ALL_DIRECTIONS:
+            action = Directions.STOP
+            
+        self.doAction(state, action)
         return action
-
 
 class ApproximateQAgent(PacmanQAgent):
     """
@@ -243,6 +241,7 @@ class ApproximateQAgent(PacmanQAgent):
         "Called at the end of each game."
         # call the super-class final method
         PacmanQAgent.final(self, state)
+        print("Learned Weights:", self.getWeights())
 
         # did we finish training?
         if self.episodesSoFar == self.numTraining:

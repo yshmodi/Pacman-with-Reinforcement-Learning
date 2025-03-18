@@ -56,6 +56,7 @@ class Directions:
     EAST = 'East'
     WEST = 'West'
     STOP = 'Stop'
+    ALL_DIRECTIONS = [NORTH, SOUTH, EAST, WEST, STOP]  # Add this line
 
     LEFT = {NORTH: WEST,
             SOUTH: EAST,
@@ -421,7 +422,7 @@ class Actions:
 
 class GameStateData:
 
-    def __init__(self, prevState=None):
+    def __init__(self, prevState=None, layout=None):
         """
         Generates a new data packet by copying information from its predecessor.
         """
@@ -429,9 +430,24 @@ class GameStateData:
             self.food = prevState.food.shallowCopy()
             self.capsules = prevState.capsules[:]
             self.agentStates = self.copyAgentStates(prevState.agentStates)
+            self.timeleft = prevState.timeleft  # Add this line
             self.layout = prevState.layout
             self._eaten = prevState._eaten
             self.score = prevState.score
+            self.horizon = prevState.horizon
+            self.lives = prevState.lives
+
+        else:
+        # Initialize from layout
+            self.food = layout.food.copy()
+            self.capsules = layout.capsules[:]
+            self.agentStates = []
+            self.horizon = -1
+            self.timeleft = self.horizon if self.horizon != -1 else None 
+            self.layout = layout
+            self._eaten = {}
+            self.score = 0
+            self.lives = 3
 
         self._foodEaten = None
         self._foodAdded = None
@@ -577,20 +593,25 @@ class Game:
     The Game manages the control flow, soliciting actions from agents.
     """
 
-    def __init__(self, agents, horizon, display, rules, startingIndex=0, muteAgents=False, catchExceptions=False):
+    def __init__(self, agents, horizon, display, rules, layout, layoutSequence=None, currentLayoutIndex=0,startingIndex=0, muteAgents=False, catchExceptions=False):
         self.agentCrashed = False
         self.agents = agents
+        self.horizon = horizon
         self.display = display
         self.rules = rules
+        self.layout = layout  # Now properly accepts layout parameter
+        self.layoutSequence = layoutSequence or []
+        self.currentLayoutIndex = currentLayoutIndex
         self.startingIndex = startingIndex
         self.gameOver = False
         self.muteAgents = muteAgents
         self.catchExceptions = catchExceptions
+        self.layoutSequence = []  
+        self.currentLayoutIndex = 0
         self.moveHistory = []
         self.totalAgentTimes = [0 for agent in agents]
         self.totalAgentTimeWarnings = [0 for agent in agents]
         self.agentTimeout = False
-        self.horizon = horizon
         import io
         self.agentOutput = [io.StringIO() for agent in agents]
 

@@ -43,6 +43,7 @@ from game import GameStateData
 from game import Game
 from game import Directions
 from game import Actions
+from game import AgentState
 from util import nearestPoint
 from util import manhattanDistance
 import util
@@ -52,6 +53,7 @@ import types
 import time
 import random
 import os
+from game import Game
 
 ###################################################
 # YOUR INTERFACE TO THE PACMAN WORLD: A GameState #
@@ -107,9 +109,18 @@ class GameState:
         if self.isWin() or self.isLose():
             raise Exception('Can\'t generate a successor of a terminal state.')
 
-        # Copy current state
-        state = GameState(self)
+        state = GameState(layout=self.layout, prevState=self)
+        
+        if self.data.horizon != -1:
+            self.data.timeleft = self.data.horizon
 
+        state.data = self.data.__class__(self.data)
+
+        if state.data.horizon != -1:
+            state.data.timeleft -= 1
+
+        state.data._eaten = self.data._eaten.copy()
+        state.data.timeleft = self.data.timeleft
         # Let agent's logic deal with its action's effects on the board
         if agentIndex == 0:  # Pacman is moving
             state.data._eaten = [False for i in range(state.getNumAgents())]
@@ -226,20 +237,30 @@ class GameState:
     # You shouldn't need to call these directly #
     #############################################
 
-    def __init__(self, prevState=None):
-        """
-        Generates a new state by copying information from its predecessor.
-        """
-        if prevState != None:  # Initial state
+    def __init__(self, layout, prevState=None, horizon=-1, layoutSequence=None, currentLayoutIndex=0):
+
+        self.layoutSequence = layoutSequence or LAYOUTS    # Use the parameter value
+        self.currentLayoutIndex = currentLayoutIndex  # Use the parameter value
+
+
+        if prevState:
+            self.layoutSequence = prevState.layoutSequence
+            self.currentLayoutIndex = prevState.currentLayoutIndex
             self.data = GameStateData(prevState.data)
+            self.data.agentStates = prevState.data.agentStates.copy()
         else:
-            self.data = GameStateData()
-
+            # Initialize fresh agents from layout
+            self.data = GameStateData(layout=layout)
+            self._initializeAgentsFromLayout(layout)
+        self.layout = layout
+        self.horizon = horizon
     def deepCopy(self):
-        state = GameState(self)
-        state.data = self.data.deepCopy()
-        return state
-
+        """Create a proper deep copy by preserving layout reference"""
+        return GameState(
+            layout=self.layout,  # Pass Layout object, not GameState
+            prevState=self,
+            horizon=self.horizon
+        )
     def __eq__(self, other):
         """
         Allows two states to be compared.
@@ -256,12 +277,45 @@ class GameState:
 
         return str(self.data)
 
-    def initialize(self, layout, numGhostAgents=1000):
-        """
-        Creates an initial game state from a layout array (see layout.py).
-        """
+    def initialize(self, layout, numGhostAgents=1000, horizon=-1):
+        from pacman import LAYOUTS  # Import layout list
         self.data.initialize(layout, numGhostAgents)
+
+        # Initialize level progression
+        self.layouts = LAYOUTS
+        try:
+            self.currentLayoutIndex = self.layouts.index(layout.name)
+        except (ValueError, AttributeError):
+            self.currentLayoutIndex = 0
+
+    def _initializeAgentsFromLayout(self, layout):
+        """Properly initialize agents based on layout configuration"""
+        from game import AgentState, Configuration, Directions
         
+        self.data.agentStates = []
+        for agent_type, pos, direction in layout.agentPositions:
+            isPacman = agent_type == 0
+            config = Configuration(pos, direction)
+            self.data.agentStates.append(AgentState(config, isPacman))
+
+    def transition_layout(self, direction):
+        if not hasattr(self, 'layoutSequence') or len(self.layoutSequence) == 0:
+            raise Exception("Layout sequence not initialized")
+        
+        new_index = (self.currentLayoutIndex + direction) % len(self.layoutSequence)
+        new_layout = layout.getLayout(self.layoutSequence[new_index])
+        
+        new_state = GameState(
+            layout=new_layout,
+            prevState=self,
+            horizon=self.horizon
+        )
+        new_state.data.agentStates = self._initializeAgentsFromLayout(new_state.layout)
+
+        new_state.layoutSequence = self.layoutSequence
+        new_state.currentLayoutIndex = new_index
+        return new_state
+            
 ############################################################################
 #                     THE HIDDEN SECRETS OF PACMAN                         #
 #                                                                          #
@@ -273,6 +327,7 @@ SCARED_TIME = 40    # Moves ghosts are scared
 COLLISION_TOLERANCE = 0.7  # How close ghosts must be to Pacman to kill
 TIME_PENALTY = 1  # Number of points lost each round
 
+LAYOUTS = ['openClassic', 'mediumGrid']
 
 class ClassicGameRules:
     """
@@ -293,12 +348,23 @@ class ClassicGameRules:
         self.quiet = quiet
         return game
 
+    def getInitialState(self, layout, horizon=-1):
+        state = GameState(layout, horizon=horizon)
+        state.data.timeleft = horizon  # Initialize timeleft
+        return state
+
     def process(self, state, game):
         """
         Checks to see whether it is time to end the game.
         """
+        if hasattr(state.data, '_transition'):
+            new_state = state.transition_layout(state.data._transition)
+            del state.data._transition
+            return new_state
+        
         if state.isWin():
-            self.win(state, game)
+            # self.win(state, game)
+            return state.transition_layout(1)
         if state.isLose():
             self.lose(state, game)
 
@@ -353,40 +419,39 @@ class PacmanRules:
 
     def applyAction(state, action):
         """
-        Edits the state to reflect the results of the action.
+        Handle action validation at the entry point
         """
+        # Validate action type and legality
+        if not isinstance(action, str) or action not in Directions.ALL_DIRECTIONS:
+            action = Directions.STOP
         legal = PacmanRules.getLegalActions(state)
         if action not in legal:
-            raise Exception("Illegal action " + str(action))
+            action = Directions.STOP
 
+        # Original movement logic
         pacmanState = state.data.agentStates[0]
-
-        # Update Configuration
+        old_pos = pacmanState.configuration.getPosition()
+        
+        # Update configuration with validated action
         vector = Actions.directionToVector(action, PacmanRules.PACMAN_SPEED)
         pacmanState.configuration = pacmanState.configuration.generateSuccessor(vector)
 
-        # Get Pac-Man's new position
-        next_pos = pacmanState.configuration.getPosition()
-        x, y = int(next_pos[0]), int(next_pos[1])
-        nearest = nearestPoint(next_pos)
+        # Tunnel transition check (preserve your existing logic)
+        new_pos = pacmanState.configuration.getPosition()
+        x, y = int(new_pos[0]), int(new_pos[1])
+        if (x, y) in state.data.layout.tunnels:
+            state.data._transition = -1 if x == 0 else 1
+            pacmanState.configuration.pos = old_pos  # Reset position until transition
 
-        # Check for tunnel transition
-        if ((x, y) in state.data.layout.tunnels or nearest in state.data.layout.tunnels):
-            if x == 0:
-                pacmanState.configuration.pos = (state.data.layout.width - 2, y)
-            elif x == state.data.layout.width - 1:
-                pacmanState.configuration.pos = (1, y)
-
-        # Consume food if close enough
-        if manhattanDistance(nearest, next_pos) <= 0.5:
+        # Food consumption logic
+        nearest = nearestPoint(new_pos)
+        if manhattanDistance(nearest, new_pos) <= 0.5:
             PacmanRules.consume(nearest, state)
-
-
-
+            
     def consume(position, state):
         x, y = position
         # Eat food
-        if state.data.food[x][y]:
+        if state.data.food[position[0]][position[1]]:
             state.data.scoreChange += 10
             state.data.food = state.data.food.copy()
             state.data.food[x][y] = False
@@ -429,10 +494,10 @@ class GhostRules:
     getLegalActions = staticmethod(getLegalActions)
 
     def applyAction(state, action, ghostIndex):
-        legal = GhostRules.getLegalActions(state, ghostIndex)
-        if action not in legal:
-            raise Exception("Illegal ghost action " + str(action))
-
+        legalActions = GhostRules.getLegalActions(state, ghostIndex)
+        if action not in legalActions:
+            vector = Actions.directionToVector(action, GhostRules.GHOST_SPEED)
+            GhostRules.setGhostPosition(state, ghostIndex, newPos)
         ghostState = state.data.agentStates[ghostIndex]
         speed = GhostRules.GHOST_SPEED
         if ghostState.scaredTimer > 0:
@@ -576,46 +641,48 @@ def readCommand(argv):
         raise Exception('Command line input not understood: ' + str(otherjunk))
     args = dict()
 
-    # Fix the random seed
+    # Fix the random seed first
     if options.fixRandomSeed:
         random.seed('cs188')
 
-    # Choose a layout
-    args['layout'] = layout.getLayout(options.layout)
-    if args['layout'] == None:
-        raise Exception("The layout " + options.layout + " cannot be found")
-
-    args['horizon'] = options.maxHorizon
-
-    # Choose a Pacman agent
-    noKeyboard = options.gameToReplay == None and (
-        options.textGraphics or options.quietGraphics)
+    # Load Pacman agent type BEFORE using it
+    noKeyboard = options.gameToReplay is None and (options.textGraphics or options.quietGraphics)
     pacmanType = loadAgent(options.pacman, noKeyboard)
-    if options.pacman == "PacmanDeepQAgent":
-        print("options.agentArgs", options.agentArgs)
-        layout_str = "layout_input={}".format(options.layout)
-        if options.agentArgs:
-            options.agentArgs += layout_str
-        else:
-            options.agentArgs = layout_str
+    
+    # Process agent arguments
     agentOpts = parseAgentArgs(options.agentArgs)
     if options.numTraining > 0:
         args['numTraining'] = options.numTraining
-        if 'numTraining' not in agentOpts:
-            agentOpts['numTraining'] = options.numTraining
-    pacman = pacmanType(**agentOpts)  # Instantiate Pacman with agentArgs
+        agentOpts['numTraining'] = options.numTraining
+
+    # Handle DeepQ special case
+    if options.pacman == "PacmanDeepQAgent":
+        print("options.agentArgs", options.agentArgs)
+        layout_str = "layout_input={}".format(options.layout)
+        options.agentArgs = f"{options.agentArgs},{layout_str}" if options.agentArgs else layout_str
+        agentOpts = parseAgentArgs(options.agentArgs)
+
+    # Create Pacman agent instance
+    pacman = pacmanType(**agentOpts)
     args['pacman'] = pacman
 
-    # Don't display training games
-    if 'numTrain' in agentOpts:
-        options.numQuiet = int(agentOpts['numTrain'])
-        options.numIgnore = int(agentOpts['numTrain'])
+    if options.layout.lower() == 'start':
+        args['layoutSequence'] = LAYOUTS  # Replace LAYOUTS with your predefined list
+        args['currentLayoutIndex'] = 0
+        layout_name = args['layoutSequence'][0]  # Define layout_name here
+    else:
+        args['layoutSequence'] = [options.layout]
+        args['currentLayoutIndex'] = 0
+        layout_name = options.layout  # Existing definition
 
-    # Choose a ghost agent
+    args['layout'] = layout.getLayout(layout_name)
+
+    # Load ghost agents - CORRECTED LINE
     ghostType = loadAgent(options.ghost, noKeyboard)
-    args['ghosts'] = [ghostType(i+1) for i in range(options.numGhosts)]
+    args['ghosts'] = [ghostType(i+1) for i in range(args['layout'].numGhosts)]  # Use args['layout']
 
-    # Choose a display format
+
+    # Set up display
     if options.quietGraphics:
         import textDisplay
         args['display'] = textDisplay.NullGraphics()
@@ -625,28 +692,50 @@ def readCommand(argv):
         args['display'] = textDisplay.PacmanGraphics()
     else:
         import graphicsDisplay
-        args['display'] = graphicsDisplay.PacmanGraphics(
-            options.zoom, frameTime=options.frameTime)
+        args['display'] = graphicsDisplay.PacmanGraphics(options.zoom, frameTime=options.frameTime)
+
+    games = []
+    for i in range(options.numGames):
+        # When creating games:
+        game = Game(
+            agents=[pacman] + args['ghosts'],
+            rules=ClassicGameRules(options.timeout),
+            layout=args['layout'],
+            display=args['display'],
+            catchExceptions=options.catchExceptions,
+            horizon=options.maxHorizon,
+            layoutSequence=args['layoutSequence'],  # Must pass these
+            currentLayoutIndex=args['currentLayoutIndex']
+        )
+        game.layoutSequence = args['layoutSequence']
+        game.currentLayoutIndex = args['currentLayoutIndex']
+        games.append(game)
+    # Set remaining arguments
     args['numGames'] = options.numGames
     args['record'] = options.record
     args['catchExceptions'] = options.catchExceptions
     args['timeout'] = options.timeout
+    args['horizon'] = options.maxHorizon
 
-    # Special case: recorded games don't use the runGames method or args structure
-    if options.gameToReplay != None:
-        print('Replaying recorded game %s.' % options.gameToReplay)
+    # Handle replay case
+    if options.gameToReplay is not None:
+        print(f'Replaying recorded game {options.gameToReplay}.')
         import pickle
-        f = open(options.gameToReplay)
-        try:
+        with open(options.gameToReplay, 'rb') as f:
             recorded = pickle.load(f)
-        finally:
-            f.close()
         recorded['display'] = args['display']
         replayGame(**recorded)
         sys.exit(0)
 
-    return args
-
+    return {
+        'games': games,
+        'display': args['display'],
+        'numGames': options.numGames,
+        'numTraining': options.numTraining,
+        'record': options.record,
+        'catchExceptions': options.catchExceptions,
+        'timeout': options.timeout
+    }
 
 def loadAgent(pacman, nographics):
     # Looks through all pythonPath Directories for the right module,
@@ -696,34 +785,32 @@ def replayGame(layout, actions, display):
 
     display.finish()
 
-
-LAYOUTS = ['openClassic', 'mediumGrid']
-
-
-def runGames(layout, horizon, pacman, ghosts, display, numGames, record, numTraining=0, catchExceptions=False, timeout=30):
+def runGames(games, display, numGames, numTraining=0, 
+            record=False, catchExceptions=False, timeout=30):
     import __main__
     __main__.__dict__['_display'] = display
 
-    rules = ClassicGameRules(timeout)
-    games = []
+    # rules = ClassicGameRules(timeout)
+    all_games = []
 
     for i in range(numGames):
         # if i % 10 == 0:
         #     print("numGames played: [{}/{}]".format(i, numGames))
+        game = games[i]  # Use pre-configured game
         beQuiet = i < numTraining
+
         if beQuiet:
                 # Suppress output and graphics
             import textDisplay
-            gameDisplay = textDisplay.NullGraphics()
-            rules.quiet = True
+            game.display = textDisplay.NullGraphics()
+            game.rules.quiet = True
         else:
-            gameDisplay = display
-            rules.quiet = False
-        game = rules.newGame(layout, horizon, pacman, ghosts,
-                             gameDisplay, beQuiet, catchExceptions)
+            game.display = display
+            game.rules.quiet = False
+        game.state = game.rules.getInitialState(game.layout, game.horizon)
         game.run()
         if not beQuiet:
-            games.append(game)
+            all_games.append(game)
 
         if record:
             import time
@@ -761,8 +848,8 @@ if __name__ == '__main__':
     > python pacman.py --help
     """
     args = readCommand(sys.argv[1:])  # Get game components based on input
-    runGames(**args)
-
+    runGames(args['games'], args['display'], args['numGames'], args['numTraining'],
+            args['record'], args['catchExceptions'], args['timeout'])
     # import cProfile
     # cProfile.run("runGames( **args )")
     pass
