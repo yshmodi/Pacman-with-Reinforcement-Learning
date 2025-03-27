@@ -374,7 +374,7 @@ class Actions:
 
     @staticmethod
     def determineTunnelExit(x, y, walls):
-        width = len(walls)
+        width = walls.width
         if x == 0:
             return (width - 2, y)  # Left tunnel entrance leads to right exit
         elif x == width - 1:
@@ -797,6 +797,7 @@ class Game:
             if "final" in dir(agent):
                 try:
                     self.mute(agentIndex)
+                    print("Final state:", self.state)
                     agent.final(self.state)
                     self.unmute()
                 except Exception as data:

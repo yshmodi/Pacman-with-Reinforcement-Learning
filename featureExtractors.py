@@ -16,6 +16,7 @@
 
 from game import Directions, Actions
 import util
+from util import manhattanDistance  # Import manhattanDistance if it exists in util
 
 class FeatureExtractor:
     def getFeatures(self, state, action):
@@ -78,8 +79,7 @@ class SimpleExtractor(FeatureExtractor):
         walls = state.getWalls()
         ghosts = state.getGhostPositions()
         capsules = state.getCapsules()
-        tunnel = state.data.layout.tunnels
-
+        successor = state.generateSuccessor(0, action)
 
         features = util.Counter()
 
@@ -107,10 +107,33 @@ class SimpleExtractor(FeatureExtractor):
             # make the distance a number less than one otherwise the update
             # will diverge wildly
             features["closest-food"] = float(dist) / (walls.width * walls.height)
-
-        # If the successor position is in a tunnel, add a feature
         if (next_x, next_y) in state.data.layout.tunnels:
-            features["tunnelEntry"] = 2.0
-
-        features.divideAll(10.0)
+            exit_pos = Actions.determineTunnelExit(next_x, next_y, walls)  # Assume this method exists
+            # Ghost benefit: Increase in distance to nearest ghost
+            current_ghost_distances = [manhattanDistance((next_x, next_y), ghost.getPosition()) 
+                                    for ghost in state.getGhostStates()]
+            exit_ghost_distances = [manhattanDistance(exit_pos, ghost.getPosition()) 
+                                    for ghost in state.getGhostStates()]
+            if current_ghost_distances and exit_ghost_distances:
+                min_current = min(current_ghost_distances)
+                min_exit = min(exit_ghost_distances)
+                features["tunnelGhostBenefit"] = max(0, (min_exit - min_current)) / (walls.width + walls.height)
+            
+            # Food benefit: Reduction in distance to nearest food
+            food = state.getFood()
+            current_food_dist = min([manhattanDistance((next_x, next_y), (fx, fy)) 
+                                    for fx in range(food.width) for fy in range(food.height) if food[fx][fy]])
+            exit_food_dist = min([manhattanDistance(exit_pos, (fx, fy)) 
+                                for fx in range(food.width) for fy in range(food.height) if food[fx][fy]])
+            features["tunnelFoodBenefit"] = max(0, (current_food_dist - exit_food_dist)) / (walls.width + walls.height)
+        # # If the successor position is in a tunnel, add a feature
+        # if (next_x, next_y) in state.data.layout.tunnels:
+        #     features["tunnelEntry"] = 5.0
+        # for feature in features:
+        #         features[feature] /= 10.0
+        # features.divideAll(10.0)
+        for feature in features:
+            if "tunnel" not in feature:
+                features[feature] /= 10.0
+        # features.divideAll(10.0)
         return features
