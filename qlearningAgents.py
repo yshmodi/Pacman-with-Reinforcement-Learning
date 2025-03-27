@@ -121,20 +121,12 @@ class QLearningAgent(ReinforcementAgent):
         #return action
 
     def update(self, state, action, nextState, reward):
-        """
-          The parent class calls this to observe a
-          state = action => nextState and reward transition.
-          You should do your Q-Value update here
-
-          NOTE: You should never call this function,
-          it will be called on your behalf
-        """
-        "*** YOUR CODE HERE ***"
-               
+        next_x, next_y = nextState.getPacmanPosition()
+        if (int(next_x), int(next_y)) in state.data.layout.tunnels:
+            reward += 5  # Encourage tunnel entry
         sample = reward + self.discount * self.computeValueFromQValues(nextState)
-        key = state,action
-        self.qvalue[key] = (1.0 - self.alpha) * self.getQValue(state,action) + self.alpha * sample
-        #util.raiseNotDefined()
+        key = (state, action)
+        self.qvalue[key] = (1.0 - self.alpha) * self.getQValue(state, action) + self.alpha * sample
 
     def getPolicy(self, state):
         return self.computeActionFromQValues(state)
@@ -146,7 +138,7 @@ class QLearningAgent(ReinforcementAgent):
 class PacmanQAgent(QLearningAgent):
     "Exactly the same as QLearningAgent, but with different default parameters"
 
-    def __init__(self, epsilon=0.05,gamma=0.8,alpha=0.2, numTraining=0, **args):
+    def __init__(self, epsilon=0.2,gamma=0.8,alpha=0.2, numTraining=0, **args):
         """
         These default parameters can be changed from the pacman.py command line.
         For example, to change the exploration rate, try:
@@ -165,31 +157,34 @@ class PacmanQAgent(QLearningAgent):
         QLearningAgent.__init__(self, **args)
 
     def getAction(self, state):
-        """
-        Simply calls the getAction method of QLearningAgent and then
-        informs parent of action for Pacman.  Do not change or remove this
-        method.
-        """
-        """
-        For debugging tunnel usage, force Pac-Man to use a tunnel move if available.
-        """
         legalActions = self.getLegalActions(state)
-        # Check each legal action: if any action results in a tunnel move, pick it.
-        for action in legalActions:
-            successor = state.generateSuccessor(0, action)
-            pos = nearestPoint(successor.getPacmanPosition())
-            # Debug: print out computed successor position and nearest cell
-            # print("Action:", action, "-> Nearest position:", pos)
-            if pos in state.data.layout.tunnels:
-                print("Debug: Forcing tunnel move with action:", action, "resulting in tunnel position:", pos)
-                self.doAction(state, action)
-                return action
-        # Otherwise, use the standard Q-learning policy
-        action = QLearningAgent.getAction(self,state)
-        self.doAction(state,action)
+        x, y = state.getPacmanPosition()
+
+        # Check if Pac-Man is at a tunnel exit (just teleported)
+        is_at_tunnel_exit = (x, y) not in state.data.layout.tunnels and any(
+            (int(x + dx), int(y + dy)) in state.data.layout.tunnels
+            for action in legalActions
+            for dx, dy in [Actions.directionToVector(action)]
+        )
+
+        # Force tunnel entry only if not at an exit and tunnel is beneficial
+        if not is_at_tunnel_exit:
+            for action in legalActions:
+                dx, dy = Actions.directionToVector(action)
+                next_x, next_y = int(x + dx), int(y + dy)
+                if (next_x, next_y) in state.data.layout.tunnels:
+                    # Evaluate if tunnel leads to a better state (e.g., food proximity)
+                    successor = state.generatePacmanSuccessor(action)
+                    if successor.getNumFood() < state.getNumFood() or len(successor.getCapsules()) < len(state.getCapsules()):
+                        print("Debug: Forcing beneficial tunnel move:", action)
+                        self.doAction(state, action)
+                        return action
+
+        # Fall back to Q-learning
+        action = QLearningAgent.getAction(self, state)
+        self.doAction(state, action)
         return action
-
-
+    
 class ApproximateQAgent(PacmanQAgent):
     """
        ApproximateQLearningAgent
@@ -202,6 +197,17 @@ class ApproximateQAgent(PacmanQAgent):
         self.featExtractor = util.lookup(extractor, globals())()
         PacmanQAgent.__init__(self, **args)
         self.weights = util.Counter()
+
+    def getAction(self, state):
+        legalActions = state.getLegalActions()
+        q_values = [(action, self.getQValue(state, action)) for action in legalActions]
+        print(f"State: {state.getPacmanPosition()}, Q-Values: {q_values}")
+        if random.random() < self.epsilon:
+            action = random.choice(legalActions)  # Explore randomly
+        else:
+            action = max(q_values, key=lambda x: x[1])[0]  # Exploit best action
+        self.doAction(state, action)
+        return action
 
     def getWeights(self):
         return self.weights
@@ -217,6 +223,8 @@ class ApproximateQAgent(PacmanQAgent):
         qvalue = 0
         for feature in features.keys():
             qvalue += self.weights[feature] * features[feature]
+        if "tunnelEntry" in features:
+            print(f"State: {state.getPacmanPosition()}, Action: {action}, Q-Value: {qvalue}, Features: {features}")
         return qvalue
         #util.raiseNotDefined()
 
@@ -248,4 +256,5 @@ class ApproximateQAgent(PacmanQAgent):
         if self.episodesSoFar == self.numTraining:
             # you might want to print your weights here for debugging
             "*** YOUR CODE HERE ***"
+            print("Learned Weights:", self.weights)
             pass

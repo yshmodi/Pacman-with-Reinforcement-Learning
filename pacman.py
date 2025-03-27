@@ -370,12 +370,15 @@ class PacmanRules:
         x, y = int(next_pos[0]), int(next_pos[1])
         nearest = nearestPoint(next_pos)
 
-        # Check for tunnel transition
-        if ((x, y) in state.data.layout.tunnels or nearest in state.data.layout.tunnels):
-            if x == 0:
-                pacmanState.configuration.pos = (state.data.layout.width - 2, y)
-            elif x == state.data.layout.width - 1:
-                pacmanState.configuration.pos = (1, y)
+        if (x, y) in state.data.layout.tunnels:
+            if x == 0:  # Left tunnel
+                new_pos = (state.data.layout.width - 2, y)
+                print(f"Teleported from {(x, y)} to {new_pos}")
+                pacmanState.configuration.pos = new_pos
+            elif x == state.data.layout.width - 1:  # Right tunnel
+                new_pos = (1, y)
+                print(f"Teleported from {(x, y)} to {new_pos}")
+                pacmanState.configuration.pos = new_pos
 
         # Consume food if close enough
         if manhattanDistance(nearest, next_pos) <= 0.5:
